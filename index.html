@@ -25,7 +25,94 @@
         details[open] summary .arrow {
             transform: rotate(90deg);
         }
+        /* PDF Download Button Styling */
+.pdf-download-container {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 1000;
+}
+
+.pdf-download-btn {
+    background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+    color: white;
+    border: none;
+    padding: 15px 25px;
+    border-radius: 50px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pdf-download-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 35px rgba(255, 107, 107, 0.4);
+    background: linear-gradient(45deg, #ee5a24, #ff6b6b);
+}
+
+.pdf-download-btn:active {
+    transform: translateY(-1px);
+}
+
+.pdf-download-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+/* Loading animation */
+.loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ffffff;
+    border-top: 2px solid transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    display: none;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Progress indicator */
+.progress-container {
+    position: fixed;
+    bottom: 100px;
+    right: 30px;
+    background: white;
+    padding: 15px 20px;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+    display: none;
+    z-index: 1001;
+}
+
+.progress-bar {
+    width: 200px;
+    height: 6px;
+    background: #f0f0f0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 10px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+    width: 0%;
+    transition: width 0.3s ease;
+}
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body class="bg-gray-100 text-gray-800">
 
@@ -156,5 +243,135 @@
             });
         });
     </script>
+<!-- Progress Indicator -->
+<div class="progress-container" id="progressContainer">
+    <div style="font-weight: bold; color: #333;">Generating PDF...</div>
+    <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div style="margin-top: 8px; font-size: 14px; color: #666;" id="progressText">Preparing...</div>
+</div>
+
+<!-- PDF Download Button -->
+<div class="pdf-download-container">
+    <button class="pdf-download-btn" id="downloadPdfBtn" onclick="downloadPageAsPDF()">
+        <div class="loading-spinner" id="loadingSpinner"></div>
+        <span id="btnText">📄 Download PDF</span>
+    </button>
+</div>
+    <script>
+async function downloadPageAsPDF() {
+    const btn = document.getElementById('downloadPdfBtn');
+    const btnText = document.getElementById('btnText');
+    const spinner = document.getElementById('loadingSpinner');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    btnText.textContent = 'Generating...';
+    spinner.style.display = 'block';
+    progressContainer.style.display = 'block';
+    
+    try {
+        // Update progress
+        updateProgress(10, 'Preparing canvas...');
+        
+        // Get device width and full page height
+        const deviceWidth = window.innerWidth;
+        const fullHeight = Math.max(
+            document.body.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.clientHeight,
+            document.documentElement.scrollHeight,
+            document.documentElement.offsetHeight
+        );
+        
+        // Configure html2canvas options
+        const canvas = await html2canvas(document.body, {
+            width: deviceWidth,
+            height: fullHeight,
+            scrollX: 0,
+            scrollY: 0,
+            useCORS: true,
+            allowTaint: true,
+            scale: 1,
+            backgroundColor: null,
+            onclone: function(clonedDoc) {
+                // Hide the PDF button in the cloned document
+                const clonedBtn = clonedDoc.querySelector('.pdf-download-container');
+                const clonedProgress = clonedDoc.querySelector('.progress-container');
+                if (clonedBtn) clonedBtn.style.display = 'none';
+                if (clonedProgress) clonedProgress.style.display = 'none';
+            }
+        });
+        
+        updateProgress(60, 'Canvas created, generating PDF...');
+        
+        // Create PDF with device dimensions
+        const { jsPDF } = window.jspdf;
+        
+        // Convert pixels to mm (96 DPI to 72 DPI conversion)
+        const mmWidth = (deviceWidth * 25.4) / 96;
+        const mmHeight = (fullHeight * 25.4) / 96;
+        
+        // Create PDF with custom dimensions
+        const pdf = new jsPDF({
+            orientation: mmWidth > mmHeight ? 'landscape' : 'portrait',
+            unit: 'mm',
+            format: [mmWidth, mmHeight]
+        });
+        
+        updateProgress(80, 'Adding content to PDF...');
+        
+        // Add the canvas as an image to the PDF
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        pdf.addImage(imgData, 'JPEG', 0, 0, mmWidth, mmHeight);
+        
+        updateProgress(95, 'Finalizing PDF...');
+        
+        // Generate filename with timestamp
+        const now = new Date();
+        const filename = `webpage-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}.pdf`;
+        
+        // Download the PDF
+        pdf.save(filename);
+        
+        updateProgress(100, 'PDF downloaded successfully!');
+        
+        // Show success message briefly
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+        }, 2000);
+        
+    } catch (error) {
+        console.error('Error generating PDF:', error);
+        alert('Error generating PDF. Please try again.');
+        progressContainer.style.display = 'none';
+    } finally {
+        // Reset button state
+        btn.disabled = false;
+        btnText.textContent = '📄 Download PDF';
+        spinner.style.display = 'none';
+    }
+}
+
+function updateProgress(percentage, text) {
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    
+    progressFill.style.width = percentage + '%';
+    progressText.textContent = text;
+}
+
+// Optional: Add keyboard shortcut (Ctrl+P or Cmd+P)
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        downloadPageAsPDF();
+    }
+});
+</script>
 </body>
 </html>
